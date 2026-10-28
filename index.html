@@ -6,12 +6,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Window2Kochi - WebAR Experience</title>
 
-  <!-- A-Frame and MindAR MUST be loaded first in the head -->
-  <script src="https://aframe.io/releases/1.4.2/aframe.min.js"></script>
+  <!-- A-Frame and MindAR MUST be loaded in head -->
+  <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
-    /* Fixed typo from the previous CSS: changed `- {` to `* {` */
     * {
       box-sizing: border-box;
       margin: 0;
@@ -24,28 +23,47 @@
       height: 100%;
       overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background-color: transparent;
+      background-color: transparent !important;
     }
 
+    /* Official MindAR Container: required for correct camera & canvas stacking */
+    .example-container {
+      overflow: hidden;
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      top: 0;
+      left: 0;
+    }
+
+    /* Mobile Debug Console */
     #mobile-debug-console {
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
-      height: 35vh;
-      background: rgba(0, 0, 0, 0.85);
+      max-height: 25vh;
+      background: rgba(0, 0, 0, 0.75);
       color: #00ff00;
       font-family: monospace;
-      font-size: 12px;
+      font-size: 11px;
       z-index: 999999;
-      overflow-y: scroll;
-      padding: 10px;
-      pointer-events: none;
+      overflow-y: auto;
+      padding: 8px 12px;
+      pointer-events: auto;
       box-sizing: border-box;
+      border-bottom: 1px solid rgba(0, 255, 0, 0.3);
+      transition: max-height 0.2s ease;
+    }
+
+    #mobile-debug-console.minimized {
+      max-height: 24px;
+      overflow: hidden;
     }
 
     .debug-error {
       color: #ff4444;
+      font-weight: bold;
     }
 
     .debug-warn {
@@ -70,6 +88,7 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      margin-top: 30px; /* offset for debug header */
       pointer-events: auto;
     }
 
@@ -124,14 +143,53 @@
       border-color: rgba(46, 204, 113, 0.4);
     }
   </style>
+
+  <script>
+    // iOS / Safari stream watchdog: forces muted video playback on stream attach
+    const streamObserver = new MutationObserver((mutations) => {
+      for (const m of mutations) {
+        for (const node of m.addedNodes) {
+          if (node.tagName === 'VIDEO') {
+            node.setAttribute('playsinline', '');
+            node.setAttribute('webkit-playsinline', '');
+            node.playsInline = true;
+            node.muted = true;
+
+            const kickstartVideo = () => {
+              if (node.srcObject && node.paused) {
+                node.play().then(() => {
+                  console.log("Camera video stream actively playing (" + node.videoWidth + "x" + node.videoHeight + ")");
+                }).catch(err => {
+                  console.warn("Video play trigger deferred:", err);
+                });
+              }
+            };
+
+            node.addEventListener('loadedmetadata', kickstartVideo);
+            node.addEventListener('loadeddata', kickstartVideo);
+            node.addEventListener('canplay', kickstartVideo);
+            if (node.srcObject) kickstartVideo();
+          }
+        }
+      }
+    });
+    streamObserver.observe(document.documentElement, { childList: true, subtree: true });
+  </script>
 </head>
 
 <body>
-  <!-- Debug Console Injection -->
-  <div id="mobile-debug-console"></div>
+  <!-- Mobile Debug Console (Tap to toggle minimize) -->
+  <div id="mobile-debug-console" title="Tap to expand/collapse">
+    <div style="font-size: 10px; color: #888; margin-bottom: 4px;">[Console Log - tap to toggle]</div>
+  </div>
+
   <script>
     (function () {
       const debugConsole = document.getElementById('mobile-debug-console');
+      debugConsole.addEventListener('click', () => {
+        debugConsole.classList.toggle('minimized');
+      });
+
       function printToScreen(msg, type = '') {
         const logLine = document.createElement('div');
         let output = (typeof msg === 'object' && msg !== null) ? (msg.stack || JSON.stringify(msg)) : msg;
@@ -141,10 +199,14 @@
         debugConsole.appendChild(logLine);
         debugConsole.scrollTop = debugConsole.scrollHeight;
       }
+
       const originalError = console.error;
       console.error = function (...args) { printToScreen(args.join(' '), 'error'); originalError.apply(console, args); };
       const originalLog = console.log;
       console.log = function (...args) { printToScreen(args.join(' ')); originalLog.apply(console, args); };
+      const originalWarn = console.warn;
+      console.warn = function (...args) { printToScreen(args.join(' '), 'warn'); originalWarn.apply(console, args); };
+
       window.onerror = function (m, s, l) { printToScreen(`CRASH: ${m} at line ${l}`, 'error'); return false; };
       window.addEventListener('unhandledrejection', e => printToScreen(`PROMISE FAIL: ${e.reason}`, 'error'));
     })();
@@ -160,26 +222,43 @@
     </div>
   </div>
 
-  <a-scene
-    mindar-image="imageTargetSrc: ./targets.mind; autoStart: true; uiLoading: yes; uiScanning: yes; uiError: yes;"
-    color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights: true" vr-mode-ui="enabled: false"
-    device-orientation-permission-ui="enabled: false">
+  <!-- MindAR official container wrapper -->
+  <div class="example-container">
+    <a-scene
+      mindar-image="imageTargetSrc: ./targets.mind; autoStart: true; uiLoading: yes; uiScanning: yes; uiError: yes;"
+      embedded
+      color-space="sRGB"
+      renderer="colorManagement: true, physicallyCorrectLights"
+      vr-mode-ui="enabled: false"
+      device-orientation-permission-ui="enabled: false">
 
-    <!-- THE FIX: The <a-assets> block has been removed. The screenshot showed the engine hitting a 3000ms timeout trying to load the empty model.glb and audio.mp3 files, which crashed the camera sequence. -->
+      <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-    <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
-
-    <a-entity id="arTarget" mindar-image-target="targetIndex: 0">
-      <a-box position="0 0 0.1" scale="0.5 0.5 0.5" color="red"></a-box>
-    </a-entity>
-  </a-scene>
+      <a-entity id="arTarget" mindar-image-target="targetIndex: 0">
+        <a-box position="0 0 0.1" scale="0.5 0.5 0.5" color="red"></a-box>
+      </a-entity>
+    </a-scene>
+  </div>
 
   <script>
     document.addEventListener("DOMContentLoaded", () => {
+      const sceneEl = document.querySelector("a-scene");
       const targetEntity = document.querySelector("#arTarget");
       const statusMessage = document.querySelector("#statusMessage");
       const soundBtn = document.querySelector("#soundToggle");
       let audioEnabled = true;
+
+      sceneEl.addEventListener("renderstart", () => {
+        console.log("A-Frame scene render started");
+      });
+
+      sceneEl.addEventListener("arReady", () => {
+        console.log("MindAR engine ready: Camera feed active");
+      });
+
+      sceneEl.addEventListener("arError", (event) => {
+        console.error("MindAR error:", JSON.stringify(event.detail || event));
+      });
 
       soundBtn.addEventListener("click", () => {
         audioEnabled = !audioEnabled;
@@ -187,11 +266,13 @@
       });
 
       targetEntity.addEventListener("targetFound", () => {
+        console.log("Target 0 found!");
         statusMessage.textContent = "Target detected!";
         statusMessage.classList.add("detected");
       });
 
       targetEntity.addEventListener("targetLost", () => {
+        console.log("Target 0 lost");
         statusMessage.textContent = "Point camera at target image";
         statusMessage.classList.remove("detected");
       });
