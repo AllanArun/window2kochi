@@ -6,7 +6,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Window2Kochi - WebAR Experience</title>
 
-  <!-- 1. Diagnostic Console & Camera Stream Interceptors (Must run before all libraries) -->
   <style>
     * {
       box-sizing: border-box;
@@ -33,7 +32,7 @@
       left: 0;
     }
 
-    /* Ensure video is visible right behind the transparent WebGL canvas */
+    /* Ensure video is visible directly behind the transparent WebGL canvas */
     video {
       position: absolute !important;
       top: 0 !important;
@@ -49,41 +48,6 @@
       top: 0 !important;
       left: 0 !important;
       z-index: 1 !important;
-    }
-
-    /* Mobile Debug Console */
-    #mobile-debug-console {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      max-height: 30vh;
-      background: rgba(0, 0, 0, 0.85);
-      color: #00ff66;
-      font-family: ui-monospace, Menlo, Monaco, Consolas, monospace;
-      font-size: 11px;
-      line-height: 1.4;
-      z-index: 999999;
-      overflow-y: auto;
-      padding: 8px 12px;
-      pointer-events: auto;
-      box-sizing: border-box;
-      border-bottom: 2px solid rgba(0, 255, 102, 0.4);
-      transition: max-height 0.2s ease;
-    }
-
-    #mobile-debug-console.minimized {
-      max-height: 26px;
-      overflow: hidden;
-    }
-
-    .debug-error {
-      color: #ff4d4d;
-      font-weight: bold;
-    }
-
-    .debug-warn {
-      color: #ffaa00;
     }
 
     /* UI Overlay */
@@ -105,7 +69,6 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-top: 34px; /* clearance for debug header */
       pointer-events: auto;
     }
 
@@ -158,60 +121,23 @@
   </style>
 
   <script>
-    // Global Debug Screen Logger
-    window.logQueue = [];
-    window.printToScreen = function (msg, type = '') {
-      const consoleEl = document.getElementById('mobile-debug-console');
-      let text = (typeof msg === 'object' && msg !== null) ? (msg.stack || JSON.stringify(msg)) : String(msg);
-      if (!consoleEl) {
-        window.logQueue.push({ text, type });
-        return;
-      }
-      const line = document.createElement('div');
-      line.textContent = `> ${text}`;
-      if (type === 'error') line.className = 'debug-error';
-      if (type === 'warn') line.className = 'debug-warn';
-      consoleEl.appendChild(line);
-      consoleEl.scrollTop = consoleEl.scrollHeight;
-    };
-
-    const _origLog = console.log;
-    const _origWarn = console.warn;
-    const _origErr = console.error;
-
-    console.log = function (...args) { printToScreen(args.join(' ')); _origLog.apply(console, args); };
-    console.warn = function (...args) { printToScreen(args.join(' '), 'warn'); _origWarn.apply(console, args); };
-    console.error = function (...args) { printToScreen(args.join(' '), 'error'); _origErr.apply(console, args); };
-
-    window.onerror = function (m, s, l) { printToScreen(`CRASH: ${m} (line ${l})`, 'error'); return false; };
-    window.addEventListener('unhandledrejection', e => printToScreen(`PROMISE REJECT: ${e.reason}`, 'error'));
-
-    // Intercept getUserMedia: add logging + fallback for devices without environment camera
+    // Fallback for devices without environment/back camera (e.g. desktop laptops)
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       const origGUM = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
       navigator.mediaDevices.getUserMedia = async function (constraints) {
-        console.log("Camera requested:", JSON.stringify(constraints));
         try {
-          const stream = await origGUM(constraints);
-          console.log("Camera access granted! Active tracks:", stream.getVideoTracks().length);
-          return stream;
+          return await origGUM(constraints);
         } catch (err) {
-          console.warn("Primary camera request failed (" + err.name + "). Retrying fallback...");
           try {
-            const fallbackStream = await origGUM({ video: true, audio: false });
-            console.log("Fallback camera granted!");
-            return fallbackStream;
+            return await origGUM({ video: true, audio: false });
           } catch (fallbackErr) {
-            console.error("Camera completely denied:", fallbackErr.name, fallbackErr.message);
             throw fallbackErr;
           }
         }
       };
-    } else {
-      console.error("navigator.mediaDevices.getUserMedia is NOT supported in this browser!");
     }
 
-    // Intercept HTMLMediaElement.srcObject: Immediately call play() to prevent iOS WebKit stall
+    // iOS WebKit watchdog: automatically calls play() on stream attachment to prevent stall
     const mediaProto = HTMLMediaElement.prototype;
     const srcObjectDesc = Object.getOwnPropertyDescriptor(mediaProto, 'srcObject') ||
                           Object.getOwnPropertyDescriptor(HTMLVideoElement.prototype, 'srcObject');
@@ -226,12 +152,7 @@
             this.setAttribute('webkit-playsinline', '');
             this.playsInline = true;
             this.muted = true;
-            console.log("Video srcObject assigned! Triggering play()...");
-            this.play().then(() => {
-              console.log("Camera video stream is actively PLAYING!");
-            }).catch(e => {
-              console.warn("video.play() deferred by browser:", e.message);
-            });
+            this.play().catch(() => {});
           }
         },
         get() {
@@ -241,29 +162,12 @@
     }
   </script>
 
-  <!-- 2. A-Frame and MindAR Scripts -->
+  <!-- A-Frame and MindAR Libraries -->
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 </head>
 
 <body>
-  <!-- Debug Console Display -->
-  <div id="mobile-debug-console" title="Tap to expand/collapse">
-    <div style="font-size: 10px; color: #888; margin-bottom: 4px;">[Debug Console - tap to toggle]</div>
-  </div>
-
-  <script>
-    const debugConsole = document.getElementById('mobile-debug-console');
-    debugConsole.addEventListener('click', () => {
-      debugConsole.classList.toggle('minimized');
-    });
-    // Flush queued logs
-    if (window.logQueue && window.logQueue.length) {
-      window.logQueue.forEach(item => window.printToScreen(item.text, item.type));
-      window.logQueue = [];
-    }
-  </script>
-
   <!-- UI Overlay -->
   <div id="ui-container">
     <div class="top-bar">
@@ -278,7 +182,7 @@
     </div>
   </div>
 
-  <!-- MindAR official container wrapper -->
+  <!-- MindAR container wrapper -->
   <div class="example-container">
     <a-scene
       mindar-image="imageTargetSrc: ./targets.mind; autoStart: true; uiLoading: yes; uiScanning: yes; uiError: yes;"
@@ -305,30 +209,12 @@
       const camRetryBtn = document.querySelector("#camRetry");
       let audioEnabled = true;
 
-      // MindAR Lifecycle Watchers
-      sceneEl.addEventListener("renderstart", () => {
-        console.log("A-Frame scene render started");
-      });
-
-      sceneEl.addEventListener("arReady", () => {
-        console.log("MindAR engine ready: Camera & tracking online!");
-      });
-
-      sceneEl.addEventListener("arError", (event) => {
-        console.error("MindAR arError:", JSON.stringify(event.detail || event));
-      });
-
-      sceneEl.addEventListener("loaded", () => {
-        console.log("A-Frame scene loaded");
-      });
-
       // Manual camera restart button (user gesture trigger for strict mobile browser policies)
       camRetryBtn.addEventListener("click", () => {
-        console.log("Manual camera trigger clicked");
         const arSystem = sceneEl.systems["mindar-image-system"];
         if (arSystem) {
           if (arSystem.video) {
-            arSystem.video.play().then(() => console.log("Video resumed via click")).catch(e => console.error("Play error:", e));
+            arSystem.video.play().catch(() => {});
           } else {
             arSystem.start();
           }
@@ -341,13 +227,11 @@
       });
 
       targetEntity.addEventListener("targetFound", () => {
-        console.log("Target 0 DETECTED!");
         statusMessage.textContent = "Target detected!";
         statusMessage.classList.add("detected");
       });
 
       targetEntity.addEventListener("targetLost", () => {
-        console.log("Target 0 lost");
         statusMessage.textContent = "Point camera at target image";
         statusMessage.classList.remove("detected");
       });
