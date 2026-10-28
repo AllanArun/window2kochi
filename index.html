@@ -1,9 +1,100 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Window2Kochi - WebAR Experience</title>
+  <!-- Mobile Debugging Overlay -->
+  <style>
+    #mobile-debug-console {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 35vh;
+      /* Covers the top 35% of the screen */
+      background: rgba(0, 0, 0, 0.85);
+      color: #00ff00;
+      /* Hacker green for readability */
+      font-family: monospace;
+      font-size: 12px;
+      z-index: 999999;
+      /* Forces it above the AR camera UI */
+      overflow-y: scroll;
+      padding: 10px;
+      pointer-events: none;
+      /* Allows you to tap through it if needed */
+      box-sizing: border-box;
+    }
+
+    .debug-error {
+      color: #ff4444;
+    }
+
+    .debug-warn {
+      color: #ffbb33;
+    }
+  </style>
+
+  <div id="mobile-debug-console"></div>
+
+  <script>
+    (function () {
+      const debugConsole = document.getElementById('mobile-debug-console');
+
+      // Helper function to print to the visual overlay
+      function printToScreen(message, type = '') {
+        const logLine = document.createElement('div');
+        // Convert objects/errors to readable text
+        let output = (typeof message === 'object' && message !== null)
+          ? (message.stack || JSON.stringify(message))
+          : message;
+
+        logLine.textContent = `> ${output}`;
+        if (type === 'error') logLine.className = 'debug-error';
+        if (type === 'warn') logLine.className = 'debug-warn';
+
+        debugConsole.appendChild(logLine);
+        debugConsole.scrollTop = debugConsole.scrollHeight; // Auto-scroll
+      }
+
+      // 1. Intercept Standard Console Errors
+      const originalError = console.error;
+      console.error = function (...args) {
+        printToScreen(args.join(' '), 'error');
+        originalError.apply(console, args);
+      };
+
+      // 2. Intercept Standard Console Logs (Optional: comment out if too noisy)
+      const originalLog = console.log;
+      console.log = function (...args) {
+        printToScreen(args.join(' '));
+        originalLog.apply(console, args);
+      };
+
+      // 3. Intercept Fatal Window Crashes
+      window.onerror = function (message, source, lineno, colno, error) {
+        printToScreen(`CRASH: ${message} at line ${lineno}`, 'error');
+        return false;
+      };
+
+      // 4. Intercept Failed Promises (Common in WebRTC/Camera requests)
+      window.addEventListener('unhandledrejection', function (event) {
+        printToScreen(`PROMISE FAIL: ${event.reason}`, 'error');
+      });
+
+      // 5. MindAR Specific Error Hook
+      window.addEventListener('DOMContentLoaded', () => {
+        const sceneEl = document.querySelector('a-scene');
+        if (sceneEl) {
+          sceneEl.addEventListener("arError", (event) => {
+            printToScreen("MindAR Engine failed to start the camera.", 'error');
+          });
+        }
+      });
+    })();
+  </script>
 
   <!-- A-Frame library -->
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
@@ -18,7 +109,8 @@
       padding: 0;
     }
 
-    html, body {
+    html,
+    body {
       width: 100%;
       height: 100%;
       overflow: hidden;
@@ -109,6 +201,7 @@
     }
   </style>
 </head>
+
 <body>
   <!-- UI Layer -->
   <div id="ui-container">
@@ -122,13 +215,10 @@
   </div>
 
   <!-- A-Frame Scene with MindAR -->
-  <a-scene 
-    mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiLoading: yes; uiScanning: yes; uiError: yes;" 
-    color-space="sRGB" 
-    renderer="colorManagement: true, physicallyCorrectLights: true" 
-    vr-mode-ui="enabled: false" 
+  <a-scene mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiLoading: yes; uiScanning: yes; uiError: yes;"
+    color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights: true" vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false">
-    
+
     <!-- Asset Preloading -->
     <a-assets>
       <a-asset-item id="kochiModel" src="./model.glb"></a-asset-item>
@@ -141,12 +231,7 @@
     <!-- Target 0: Associated with index 0 in targets.mind -->
     <a-entity id="arTarget" mindar-image-target="targetIndex: 0">
       <!-- 3D Model: adjust position, rotation, and scale as needed -->
-      <a-gltf-model 
-        id="arModel"
-        src="#kochiModel" 
-        position="0 0 0" 
-        rotation="0 0 0" 
-        scale="0.1 0.1 0.1">
+      <a-gltf-model id="arModel" src="#kochiModel" position="0 0 0" rotation="0 0 0" scale="0.1 0.1 0.1">
       </a-gltf-model>
     </a-entity>
   </a-scene>
@@ -190,5 +275,5 @@
     });
   </script>
 </body>
-</html>
 
+</html>
