@@ -296,11 +296,13 @@
         <a-gltf-model
           id="ninaEntity"
           src="#ninaModel"
-          position="0 0 0"
+          position="0 -0.2 -0.2"
           rotation="90 0 0"
           scale="0.001 0.001 0.001"
-          animation-mixer="clip: *; loop: repeat; timeScale: 0"
-          animation__pop="property: scale; from: 0.001 0.001 0.001; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic; startEvents: popOut">
+          animation-mixer="clip: Hello_Run; loop: once; timeScale: 0; clampWhenFinished: true"
+          animation__pop="property: scale; from: 0.001 0.001 0.001; to: 0.5 0.5 0.5; dur: 800; easing: easeOutElastic; startEvents: popOut"
+          animation__jump="property: position; from: 0 -0.2 -0.2; to: 0 0 0; dur: 800; easing: easeOutBack; startEvents: popOut"
+          animation__hop="property: position; from: 0 0 0; to: 0 0.04 0.04; dur: 360; dir: alternate; loop: true; easing: easeInOutSine; startEvents: startHopping; pauseEvents: stopHopping">
         </a-gltf-model>
       </a-entity>
     </a-scene>
@@ -318,6 +320,23 @@
 
       let soundEnabled = true;
       let audioUnlocked = false;
+      let waveTimer = null;
+
+      // Excited hopping state transition
+      function startCheering() {
+        if (waveTimer) {
+          clearTimeout(waveTimer);
+          waveTimer = null;
+        }
+        console.log("Wave complete! Nina is hopping and cheering excitedly!");
+        ninaEntity.setAttribute("animation-mixer", {
+          clip: "Cheer_with_Both_Hands_1",
+          loop: "repeat",
+          timeScale: 1,
+          crossFadeDuration: 0.3
+        });
+        ninaEntity.emit("startHopping");
+      }
 
       // 1. Mobile Audio Unlock Logic (required by mobile browsers to allow unmuted audio)
       function unlockAudio() {
@@ -385,13 +404,35 @@
         statusMessage.textContent = "Target detected!";
         statusMessage.classList.add("detected");
 
-        // Emit popOut event on ninaEntity to trigger scale pop-out spring animation
+        // 1. Leap out of the book & pop-out scale spring
         ninaEntity.emit("popOut");
 
-        // Unpause rig animation
-        ninaEntity.setAttribute("animation-mixer", "clip: *; loop: repeat; timeScale: 1");
+        // 2. Play wave animation first (Hello_Run)
+        console.log("Nina leaps out and waves hello!");
+        ninaEntity.setAttribute("animation-mixer", {
+          clip: "Hello_Run",
+          loop: "once",
+          timeScale: 1,
+          clampWhenFinished: true
+        });
 
-        // Synchronized Audio Playback
+        // 3. Listen for wave finish to transition into excited hopping
+        const onWaveFinished = (e) => {
+          if (e.detail && e.detail.action && e.detail.action.getClip().name === "Hello_Run") {
+            ninaEntity.removeEventListener("animation-finished", onWaveFinished);
+            startCheering();
+          }
+        };
+        ninaEntity.addEventListener("animation-finished", onWaveFinished);
+
+        // Safety fallback timer (~2.4s) to ensure cheering begins even if event is missed
+        if (waveTimer) clearTimeout(waveTimer);
+        waveTimer = setTimeout(() => {
+          ninaEntity.removeEventListener("animation-finished", onWaveFinished);
+          startCheering();
+        }, 2450);
+
+        // 4. Synchronized Audio Playback
         if (soundEnabled) {
           coverAudio.currentTime = 0;
           coverAudio.play().catch((err) => {
@@ -406,12 +447,22 @@
         statusMessage.textContent = "Point camera at target image";
         statusMessage.classList.remove("detected");
 
-        // Pause audio
+        // Pause audio and clear transition timer
         coverAudio.pause();
+        if (waveTimer) {
+          clearTimeout(waveTimer);
+          waveTimer = null;
+        }
 
-        // Reset scale back to 0.001 0.001 0.001 and timeScale to 0 for fresh pop-out next time
+        // Stop hopping bounce and reset Nina back into the book
+        ninaEntity.emit("stopHopping");
+        ninaEntity.setAttribute("position", "0 -0.2 -0.2");
         ninaEntity.setAttribute("scale", "0.001 0.001 0.001");
-        ninaEntity.setAttribute("animation-mixer", "clip: *; loop: repeat; timeScale: 0");
+        ninaEntity.setAttribute("animation-mixer", {
+          clip: "Hello_Run",
+          loop: "once",
+          timeScale: 0
+        });
       });
     });
   </script>
