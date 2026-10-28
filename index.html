@@ -318,14 +318,8 @@
         console.error("MindAR arError:", JSON.stringify(event.detail || event));
       });
 
-      // Safety Guard: if MindAR didn't autostart on renderstart, trigger it once loaded
       sceneEl.addEventListener("loaded", () => {
         console.log("A-Frame scene loaded");
-        const arSystem = sceneEl.systems["mindar-image-system"];
-        if (arSystem && !arSystem.video) {
-          console.log("MindAR not yet started. Calling arSystem.start()...");
-          arSystem.start();
-        }
       });
 
       // Manual camera restart button (user gesture trigger for strict mobile browser policies)
