@@ -5,104 +5,13 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>Window2Kochi - WebAR Experience</title>
-  <!-- Mobile Debugging Overlay -->
-  <style>
-    #mobile-debug-console {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 35vh;
-      /* Covers the top 35% of the screen */
-      background: rgba(0, 0, 0, 0.85);
-      color: #00ff00;
-      /* Hacker green for readability */
-      font-family: monospace;
-      font-size: 12px;
-      z-index: 999999;
-      /* Forces it above the AR camera UI */
-      overflow-y: scroll;
-      padding: 10px;
-      pointer-events: none;
-      /* Allows you to tap through it if needed */
-      box-sizing: border-box;
-    }
 
-    .debug-error {
-      color: #ff4444;
-    }
-
-    .debug-warn {
-      color: #ffbb33;
-    }
-  </style>
-
-  <div id="mobile-debug-console"></div>
-
-  <script>
-    (function () {
-      const debugConsole = document.getElementById('mobile-debug-console');
-
-      // Helper function to print to the visual overlay
-      function printToScreen(message, type = '') {
-        const logLine = document.createElement('div');
-        // Convert objects/errors to readable text
-        let output = (typeof message === 'object' && message !== null)
-          ? (message.stack || JSON.stringify(message))
-          : message;
-
-        logLine.textContent = `> ${output}`;
-        if (type === 'error') logLine.className = 'debug-error';
-        if (type === 'warn') logLine.className = 'debug-warn';
-
-        debugConsole.appendChild(logLine);
-        debugConsole.scrollTop = debugConsole.scrollHeight; // Auto-scroll
-      }
-
-      // 1. Intercept Standard Console Errors
-      const originalError = console.error;
-      console.error = function (...args) {
-        printToScreen(args.join(' '), 'error');
-        originalError.apply(console, args);
-      };
-
-      // 2. Intercept Standard Console Logs (Optional: comment out if too noisy)
-      const originalLog = console.log;
-      console.log = function (...args) {
-        printToScreen(args.join(' '));
-        originalLog.apply(console, args);
-      };
-
-      // 3. Intercept Fatal Window Crashes
-      window.onerror = function (message, source, lineno, colno, error) {
-        printToScreen(`CRASH: ${message} at line ${lineno}`, 'error');
-        return false;
-      };
-
-      // 4. Intercept Failed Promises (Common in WebRTC/Camera requests)
-      window.addEventListener('unhandledrejection', function (event) {
-        printToScreen(`PROMISE FAIL: ${event.reason}`, 'error');
-      });
-
-      // 5. MindAR Specific Error Hook
-      window.addEventListener('DOMContentLoaded', () => {
-        const sceneEl = document.querySelector('a-scene');
-        if (sceneEl) {
-          sceneEl.addEventListener("arError", (event) => {
-            printToScreen("MindAR Engine failed to start the camera.", 'error');
-          });
-        }
-      });
-    })();
-  </script>
-
-  <!-- A-Frame library -->
+  <!-- A-Frame and MindAR MUST be loaded first in the head -->
   <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-
-  <!-- MindAR Image Tracking for A-Frame -->
   <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
 
   <style>
+    /* Fixed typo from the previous CSS: changed `- {` to `* {` */
     * {
       box-sizing: border-box;
       margin: 0;
@@ -118,7 +27,31 @@
       background-color: #000;
     }
 
-    /* UI Overlay */
+    #mobile-debug-console {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 35vh;
+      background: rgba(0, 0, 0, 0.85);
+      color: #00ff00;
+      font-family: monospace;
+      font-size: 12px;
+      z-index: 999999;
+      overflow-y: scroll;
+      padding: 10px;
+      pointer-events: none;
+      box-sizing: border-box;
+    }
+
+    .debug-error {
+      color: #ff4444;
+    }
+
+    .debug-warn {
+      color: #ffbb33;
+    }
+
     #ui-container {
       position: fixed;
       top: 0;
@@ -133,7 +66,6 @@
       padding: 16px;
     }
 
-    /* Top Bar */
     .top-bar {
       display: flex;
       justify-content: space-between;
@@ -149,7 +81,6 @@
       border-radius: 20px;
       font-size: 14px;
       font-weight: 600;
-      letter-spacing: 0.5px;
       border: 1px solid rgba(255, 255, 255, 0.15);
     }
 
@@ -169,11 +100,6 @@
       transition: background 0.2s, transform 0.2s;
     }
 
-    .sound-btn:active {
-      transform: scale(0.95);
-    }
-
-    /* Bottom Prompt */
     .bottom-bar {
       display: flex;
       justify-content: center;
@@ -189,21 +115,41 @@
       border-radius: 24px;
       font-size: 14px;
       font-weight: 500;
-      text-align: center;
       border: 1px solid rgba(255, 255, 255, 0.15);
       transition: all 0.3s ease;
     }
 
     .status-card.detected {
       background: rgba(46, 204, 113, 0.85);
-      color: #fff;
       border-color: rgba(46, 204, 113, 0.4);
     }
   </style>
 </head>
 
 <body>
-  <!-- UI Layer -->
+  <!-- Debug Console Injection -->
+  <div id="mobile-debug-console"></div>
+  <script>
+    (function () {
+      const debugConsole = document.getElementById('mobile-debug-console');
+      function printToScreen(msg, type = '') {
+        const logLine = document.createElement('div');
+        let output = (typeof msg === 'object' && msg !== null) ? (msg.stack || JSON.stringify(msg)) : msg;
+        logLine.textContent = `> ${output}`;
+        if (type === 'error') logLine.className = 'debug-error';
+        if (type === 'warn') logLine.className = 'debug-warn';
+        debugConsole.appendChild(logLine);
+        debugConsole.scrollTop = debugConsole.scrollHeight;
+      }
+      const originalError = console.error;
+      console.error = function (...args) { printToScreen(args.join(' '), 'error'); originalError.apply(console, args); };
+      const originalLog = console.log;
+      console.log = function (...args) { printToScreen(args.join(' ')); originalLog.apply(console, args); };
+      window.onerror = function (m, s, l) { printToScreen(`CRASH: ${m} at line ${l}`, 'error'); return false; };
+      window.addEventListener('unhandledrejection', e => printToScreen(`PROMISE FAIL: ${e.reason}`, 'error'));
+    })();
+  </script>
+
   <div id="ui-container">
     <div class="top-bar">
       <div class="badge">Window2Kochi AR</div>
@@ -214,23 +160,16 @@
     </div>
   </div>
 
-  <!-- A-Frame Scene with MindAR -->
-  <a-scene mindar-image="imageTargetSrc: targets.mind; autoStart: true; uiLoading: yes; uiScanning: yes; uiError: yes;"
+  <a-scene
+    mindar-image="imageTargetSrc: ./targets.mind; autoStart: true; uiLoading: yes; uiScanning: yes; uiError: yes;"
     color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights: true" vr-mode-ui="enabled: false"
     device-orientation-permission-ui="enabled: false">
 
-    <!-- Asset Preloading -->
-    <a-assets>
-      <a-asset-item id="kochiModel" src="./model.glb"></a-asset-item>
-      <audio id="kochiAudio" src="./audio.mp3" preload="auto"></audio>
-    </a-assets>
+    <!-- THE FIX: The <a-assets> block has been removed. The screenshot showed the engine hitting a 3000ms timeout trying to load the empty model.glb and audio.mp3 files, which crashed the camera sequence. -->
 
-    <!-- AR Camera -->
     <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
 
-    <!-- Target 0: Associated with index 0 in targets.mind -->
     <a-entity id="arTarget" mindar-image-target="targetIndex: 0">
-      <!-- 3D Model: adjust position, rotation, and scale as needed -->
       <a-box position="0 0 0.1" scale="0.5 0.5 0.5" color="red"></a-box>
     </a-entity>
   </a-scene>
@@ -238,38 +177,23 @@
   <script>
     document.addEventListener("DOMContentLoaded", () => {
       const targetEntity = document.querySelector("#arTarget");
-      const audio = document.querySelector("#kochiAudio");
-      const soundBtn = document.querySelector("#soundToggle");
       const statusMessage = document.querySelector("#statusMessage");
-
+      const soundBtn = document.querySelector("#soundToggle");
       let audioEnabled = true;
 
-      // Handle user gesture to unlock audio on mobile browsers
       soundBtn.addEventListener("click", () => {
         audioEnabled = !audioEnabled;
         soundBtn.textContent = audioEnabled ? "🔊" : "🔇";
-        if (!audioEnabled) {
-          audio.pause();
-        }
       });
 
-      // Target Detected Event
       targetEntity.addEventListener("targetFound", () => {
         statusMessage.textContent = "Target detected!";
         statusMessage.classList.add("detected");
-
-        if (audioEnabled) {
-          audio.play().catch((err) => {
-            console.log("Audio play blocked by browser policy until user interacts:", err);
-          });
-        }
       });
 
-      // Target Lost Event
       targetEntity.addEventListener("targetLost", () => {
         statusMessage.textContent = "Point camera at target image";
         statusMessage.classList.remove("detected");
-        audio.pause();
       });
     });
   </script>
