@@ -228,11 +228,6 @@
         threshold: { type: 'number', default: 0.38, is: 'uniform' },
         smoothness: { type: 'number', default: 0.1, is: 'uniform' }
       },
-      init: function (data) {
-        this.material.transparent = true;
-        this.material.depthWrite = false;
-        this.material.side = THREE.DoubleSide;
-      },
       vertexShader: `
         varying vec2 vUv;
         void main() {
@@ -416,7 +411,7 @@
             rotation="90 0 0"
             width="1.2"
             height="1.2"
-            material="shader: chromakey; src: #popoutVideo; color: #00ff00; transparent: true; side: double;"
+            material="shader: chromakey; src: #popoutVideo; color: #00ff00; transparent: true; depthWrite: false; side: double;"
             y-billboard>
           </a-plane>
         </a-entity>
@@ -461,29 +456,65 @@
       let isTargetDetected = false;
 
       // ==========================================
+      // Nina GLB Animation Sequence (Hello_Run -> Cheer_with_Both_Hands_1)
+      // ==========================================
+      function startNinaAnimation() {
+        ninaEntity.setAttribute("animation-mixer", "clip: Hello_Run; loop: once; clampWhenFinished: true; timeScale: 1");
+      }
+
+      ninaEntity.addEventListener("animation-finished", () => {
+        if (isTargetDetected && currentMode === "glb") {
+          ninaEntity.setAttribute("animation-mixer", "clip: Cheer_with_Both_Hands_1; loop: repeat; timeScale: 1");
+        }
+      });
+
+      // ==========================================
       // Mobile Media Unlocking (Audio & Video)
       // ==========================================
       function unlockMedia() {
-        if (!audioUnlocked) {
-          coverAudio.play().then(() => {
+        if (audioUnlocked) return;
+        audioUnlocked = true;
+
+        window.removeEventListener("click", unlockMedia);
+        window.removeEventListener("touchstart", unlockMedia);
+
+        // Mute coverAudio before priming play() so no sound leaks before target detection
+        coverAudio.muted = true;
+        const audioPromise = coverAudio.play();
+        if (audioPromise !== undefined) {
+          audioPromise.then(() => {
             coverAudio.pause();
             coverAudio.currentTime = 0;
-            audioUnlocked = true;
-            console.log("Audio unlocked successfully!");
-          }).catch(err => {
-            console.warn("Audio unlock pending interaction:", err);
-          });
+            // Restore unmuted state so it can play aloud when target is detected
+            coverAudio.muted = false;
+            console.log("Audio primed successfully!");
 
-          popoutVideo.play().then(() => {
+            // If target was already detected before user tapped, start audio now
+            if (isTargetDetected && soundEnabled) {
+              coverAudio.play().catch(err => console.warn("coverAudio play blocked:", err));
+            }
+          }).catch(err => {
+            console.warn("Audio unlock pending user interaction:", err);
+            audioUnlocked = false;
+            coverAudio.muted = false;
+          });
+        }
+
+        // Keep popoutVideo muted so it never doubles coverAudio
+        popoutVideo.muted = true;
+        const videoPromise = popoutVideo.play();
+        if (videoPromise !== undefined) {
+          videoPromise.then(() => {
             if (!isTargetDetected || currentMode !== "video") {
               popoutVideo.pause();
+              popoutVideo.currentTime = 0;
             }
           }).catch(() => {});
         }
       }
 
-      window.addEventListener("click", unlockMedia, { once: true });
-      window.addEventListener("touchstart", unlockMedia, { once: true });
+      window.addEventListener("click", unlockMedia, { passive: true });
+      window.addEventListener("touchstart", unlockMedia, { passive: true });
 
       // ==========================================
       // Sound Toggle
@@ -495,6 +526,7 @@
         if (!soundEnabled) {
           coverAudio.pause();
         } else if (isTargetDetected) {
+          coverAudio.currentTime = 0;
           coverAudio.play().catch(e => console.warn("Audio play blocked:", e));
         }
       });
@@ -514,7 +546,7 @@
 
           if (isTargetDetected) {
             glbGroup.emit("popOut");
-            ninaEntity.setAttribute("animation-mixer", "clip: *; loop: repeat; timeScale: 1");
+            startNinaAnimation();
           }
           console.log("Switched to 3D GLB mode");
         } else {
@@ -523,7 +555,7 @@
           modeBtn.classList.add("active-mode");
           glbGroup.setAttribute("visible", "false");
           videoGroup.setAttribute("visible", "true");
-          ninaEntity.setAttribute("animation-mixer", "clip: *; loop: repeat; timeScale: 0");
+          ninaEntity.setAttribute("animation-mixer", "clip: Hello_Run; loop: once; timeScale: 0");
 
           if (isTargetDetected) {
             videoGroup.emit("popOut");
@@ -572,17 +604,21 @@
         statusMessage.classList.add("detected");
 
         // Synchronize and play popoutVideo (kept muted to avoid audio doubling)
-        popoutVideo.currentTime = 0;
-        popoutVideo.play().then(() => {
-          console.log("popout.mp4 playing with chromakey shader");
-        }).catch(err => {
-          console.warn("popoutVideo play error:", err);
-        });
+        if (currentMode === "video") {
+          popoutVideo.currentTime = 0;
+          popoutVideo.play().then(() => {
+            console.log("popout.mp4 playing with chromakey shader");
+          }).catch(err => {
+            console.warn("popoutVideo play error:", err);
+          });
+        }
 
         // Synchronize coverAudio as primary soundtrack
         if (soundEnabled) {
           coverAudio.currentTime = 0;
-          coverAudio.play().catch((err) => {
+          coverAudio.play().then(() => {
+            console.log("coverAudio playing");
+          }).catch((err) => {
             console.warn("coverAudio play blocked; tap screen to unlock:", err);
           });
         }
@@ -592,7 +628,7 @@
           videoGroup.emit("popOut");
         } else {
           glbGroup.emit("popOut");
-          ninaEntity.setAttribute("animation-mixer", "clip: *; loop: repeat; timeScale: 1");
+          startNinaAnimation();
         }
       });
 
@@ -612,7 +648,7 @@
         // Reset scales to 0.001 0.001 0.001 for fresh pop-out next time
         videoGroup.setAttribute("scale", "0.001 0.001 0.001");
         glbGroup.setAttribute("scale", "0.001 0.001 0.001");
-        ninaEntity.setAttribute("animation-mixer", "clip: *; loop: repeat; timeScale: 0");
+        ninaEntity.setAttribute("animation-mixer", "clip: Hello_Run; loop: once; timeScale: 0");
       });
     });
   </script>
